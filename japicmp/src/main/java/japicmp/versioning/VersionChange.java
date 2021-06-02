@@ -20,7 +20,7 @@ public class VersionChange {
 		this.ignoreMissingNewVersion = ignoreMissingNewVersion;
 	}
 
-	public Optional<SemanticVersion.ChangeType> computeChangeType() throws JApiCmpException {
+	public Optional<ChangeTypeResult> computeChangeType() throws JApiCmpException {
 		if (this.oldVersions.isEmpty()) {
 			if (!ignoreMissingOldVersion) {
 				throw new JApiCmpException(JApiCmpException.Reason.IllegalArgument, "Could not extract semantic version for at least one old version. Please " +
@@ -40,28 +40,45 @@ public class VersionChange {
 		if (allVersionsTheSame(oldVersions) && allVersionsTheSame(newVersions)) {
 			SemanticVersion oldVersion = oldVersions.get(0);
 			SemanticVersion newVersion = newVersions.get(0);
-			return oldVersion.computeChangeType(newVersion);
+			Optional<SemanticVersion.ChangeType> result = oldVersion.computeChangeType(newVersion);
+			return result.isPresent()
+					? Optional.of(new ChangeTypeResult(result.get(), oldVersion.increment(result.get())))
+					: Optional.absent();
 		} else {
 			if (oldVersions.size() != newVersions.size()) {
 				throw new JApiCmpException(JApiCmpException.Reason.IllegalArgument, "Cannot compare versions because the number of old versions is different than the number of new versions.");
 			} else {
-				List<SemanticVersion.ChangeType> changeTypes = new ArrayList<>();
+				List<ChangeTypeResult> allChangeTypeResult = new ArrayList<>();
 				for (int i=0; i<oldVersions.size(); i++) {
 					SemanticVersion oldVersion = oldVersions.get(i);
 					SemanticVersion newVersion = newVersions.get(i);
 					Optional<SemanticVersion.ChangeType> changeTypeOptional = oldVersion.computeChangeType(newVersion);
 					if (changeTypeOptional.isPresent()) {
-						changeTypes.add(changeTypeOptional.get());
+						SemanticVersion.ChangeType changeType = changeTypeOptional.get();
+						allChangeTypeResult.add(new ChangeTypeResult(changeType, oldVersion));
 					}
 				}
-				SemanticVersion.ChangeType maxRank = SemanticVersion.ChangeType.UNCHANGED;
-				for (SemanticVersion.ChangeType changeType : changeTypes) {
-					if (changeType.getRank() > maxRank.getRank()) {
-						maxRank = changeType;
+				ChangeTypeResult maxChangeTypeResult = null;
+				for (ChangeTypeResult changeTypeResult : allChangeTypeResult) {
+					if (maxChangeTypeResult == null) {
+						maxChangeTypeResult = changeTypeResult;
+					} else if (changeTypeResult.maxRank.getRank() > maxChangeTypeResult.maxRank.getRank()) {
+						maxChangeTypeResult = changeTypeResult;
 					}
 				}
-				return Optional.fromNullable(maxRank);
+				return Optional.fromNullable(maxChangeTypeResult);
 			}
+		}
+	}
+
+	public static final class ChangeTypeResult {
+		public final SemanticVersion.ChangeType maxRank;
+		public final SemanticVersion oldVersion;
+
+		public ChangeTypeResult(SemanticVersion.ChangeType maxRank,
+								SemanticVersion oldVersion) {
+			this.maxRank = maxRank;
+			this.oldVersion = oldVersion;
 		}
 	}
 

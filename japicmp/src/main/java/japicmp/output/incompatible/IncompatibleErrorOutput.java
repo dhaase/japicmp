@@ -53,7 +53,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class IncompatibleErrorOutput extends OutputGenerator<Void> {
+public class IncompatibleErrorOutput extends OutputGenerator<Optional<IncompatibleErrorOutput.ErrorOutput>> {
 
 	private static final Logger LOGGER = Logger.getLogger(JApiCmp.class.getName());
 
@@ -85,16 +85,20 @@ public class IncompatibleErrorOutput extends OutputGenerator<Void> {
 	}
 
 	@Override
-	public Void generate() {
+	public Optional<ErrorOutput> generate() {
 		if (options.isErrorOnModifications()) {
 			for (JApiClass jApiClass : jApiClasses) {
 				if (jApiClass.getChangeStatus() != JApiChangeStatus.UNCHANGED) {
-					throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, String.format("There is at least one modified class: %s", jApiClass.getFullyQualifiedName()));
+					return Optional.of(new ErrorOutput(null, JApiCmpException.Reason.IncompatibleChange,
+							String.format("(01) There is at least one modified class: %s", jApiClass.getFullyQualifiedName())));
 				}
 			}
 		}
-		breakBuildIfNecessaryByApplyingFilter(jApiClasses, options, jarArchiveComparator);
-		if (options.isErrorOnSemanticIncompatibility()) {
+
+		Optional<ErrorOutput> errorOutput = breakBuildIfNecessaryByApplyingFilter(jApiClasses, options, jarArchiveComparator);
+		if (errorOutput.isPresent()) {
+			return errorOutput;
+		} else if (options.isErrorOnSemanticIncompatibility()) {
 			boolean ignoreMissingOldVersion = options.isIgnoreMissingOldVersion();
 			boolean ignoreMissingNewVersion = options.isIgnoreMissingNewVersion();
 			List<SemanticVersion> oldVersions = new ArrayList<>();
@@ -113,52 +117,74 @@ public class IncompatibleErrorOutput extends OutputGenerator<Void> {
 			}
 			VersionChange versionChange = new VersionChange(oldVersions, newVersions, ignoreMissingOldVersion, ignoreMissingNewVersion);
 			if (!versionChange.isAllMajorVersionsZero() || options.isErrorOnSemanticIncompatibilityForMajorVersionZero()) {
-				Optional<SemanticVersion.ChangeType> changeTypeOptional = versionChange.computeChangeType();
+				Optional<VersionChange.ChangeTypeResult> changeTypeOptional = versionChange.computeChangeType();
 				if (changeTypeOptional.isPresent()) {
-					final SemanticVersion.ChangeType changeType = changeTypeOptional.get();
+					final VersionChange.ChangeTypeResult changeTypeResult = changeTypeOptional.get();
+					final SemanticVersion.ChangeType changeType = changeTypeResult.maxRank;
 
 					SemverOut semverOut = new SemverOut(options, jApiClasses, new SemverOut.Listener() {
-							public void onChange(JApiCompatibility change, JApiSemanticVersionLevel semanticVersionLevel) {
-								switch(semanticVersionLevel) {
+						public void onChange(JApiCompatibility change, JApiSemanticVersionLevel semanticVersionLevel) {
+							switch (semanticVersionLevel) {
 								case MAJOR:
-									if (changeType.ordinal() > SemanticVersion.ChangeType.MAJOR.ordinal()) {
-										warn("Incompatibility detected: Requires semantic version level " + semanticVersionLevel + ": " + change);
+									if (changeType.getRank() < SemanticVersion.ChangeType.MAJOR.getRank()) {
+										warn("Incompatibility detected: Requires semantic version level "
+												+ semanticVersionLevel + ": " + change);
 									}
 									break;
 								case MINOR:
-									if (changeType.ordinal() > SemanticVersion.ChangeType.MINOR.ordinal()) {
-										warn("Incompatibility detected: Requires semantic version level	 " + semanticVersionLevel + ": " + change);
+									if (changeType.getRank() < SemanticVersion.ChangeType.MINOR.getRank()) {
+										warn("Incompatibility detected: Requires semantic version level	 "
+												+ semanticVersionLevel + ": " + change);
 									}
 									break;
 								case PATCH:
-									if (changeType.ordinal() > SemanticVersion.ChangeType.PATCH.ordinal()) {
-										warn("Incompatibility detected: Requires semantic version level	 " + semanticVersionLevel + ": " + change);
+									if (changeType.getRank() < SemanticVersion.ChangeType.PATCH.getRank()) {
+										warn("Incompatibility detected: Requires semantic version level	 "
+												+ semanticVersionLevel + ": " + change);
 									}
 									break;
 								default:
 									// Ignore
-								}
+							}
 							}
 						});
 
 					String semver = semverOut.generate();
 					if (changeType == SemanticVersion.ChangeType.MINOR && semver.equals("1.0.0")) {
-						throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, "Versions of archives indicate a minor change but binary incompatible changes found.");
+						return Optional.of(new ErrorOutput(changeTypeResult.oldVersion, JApiCmpException.Reason.IncompatibleChange,
+								"Versions of archives indicate a minor change but binary incompatible changes found."
+								, "Next version should be at least [" +
+								changeTypeResult.oldVersion.increment(SemanticVersion.ChangeType.MAJOR) + "]"));
 					}
 					if (changeType == SemanticVersion.ChangeType.PATCH && semver.equals("1.0.0")) {
-						throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, "Versions of archives indicate a patch change but binary incompatible changes found.");
+						return Optional.of(new ErrorOutput(changeTypeResult.oldVersion, JApiCmpException.Reason.IncompatibleChange,
+								"Versions of archives indicate a patch change but binary incompatible changes found."
+								, "Next version should be at least [" +
+								changeTypeResult.oldVersion.increment(SemanticVersion.ChangeType.MAJOR) + "]"));
 					}
 					if (changeType == SemanticVersion.ChangeType.PATCH && semver.equals("0.1.0")) {
-						throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, "Versions of archives indicate a patch change but binary compatible changes found.");
+						return Optional.of(new ErrorOutput(changeTypeResult.oldVersion, JApiCmpException.Reason.IncompatibleChange,
+								"Versions of archives indicate a patch change but binary compatible changes found."
+								, "Next version should be at least [" +
+								changeTypeResult.oldVersion.increment(SemanticVersion.ChangeType.MAJOR) + "]"));
 					}
 					if (changeType == SemanticVersion.ChangeType.UNCHANGED && semver.equals("1.0.0")) {
-						throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, "Versions of archives indicate no API changes but binary incompatible changes found.");
+						return Optional.of(new ErrorOutput(changeTypeResult.oldVersion, JApiCmpException.Reason.IncompatibleChange,
+								"Versions of archives indicate no API changes but binary incompatible changes found."
+								, "Next version should be at least [" +
+								changeTypeResult.oldVersion.increment(SemanticVersion.ChangeType.MAJOR) + "]"));
 					}
 					if (changeType == SemanticVersion.ChangeType.UNCHANGED && semver.equals("0.1.0")) {
-						throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, "Versions of archives indicate no API changes but binary compatible changes found.");
+						return Optional.of(new ErrorOutput(changeTypeResult.oldVersion, JApiCmpException.Reason.IncompatibleChange,
+								"Versions of archives indicate no API changes but binary compatible changes found."
+								, "Next version should be at least [" +
+								changeTypeResult.oldVersion.increment(SemanticVersion.ChangeType.MAJOR) + "]"));
 					}
 					if (changeType == SemanticVersion.ChangeType.UNCHANGED && semver.equals("0.0.1")) {
-						throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, "Versions of archives indicate no API changes but found API changes.");
+						return Optional.of(new ErrorOutput(changeTypeResult.oldVersion, JApiCmpException.Reason.IncompatibleChange,
+								"Versions of archives indicate no API changes but found API changes."
+								, "Next version should be at least [" +
+								changeTypeResult.oldVersion.increment(SemanticVersion.ChangeType.MAJOR) + "]"));
 					}
 				} else {
 					if (isDebugEnabled()) {
@@ -170,7 +196,7 @@ public class IncompatibleErrorOutput extends OutputGenerator<Void> {
 				info("Skipping semantic version check because all major versions are zero (see http://semver.org/#semantic-versioning-specification-semver, section 4).");
 			}
 		}
-		return null;
+		return Optional.absent();
 	}
 
 
@@ -202,11 +228,12 @@ public class IncompatibleErrorOutput extends OutputGenerator<Void> {
 		return sb.toString();
 	}
 
-	void breakBuildIfNecessaryByApplyingFilter(List<JApiClass> jApiClasses, final Options options,
-											   final JarArchiveComparator jarArchiveComparator) {
+	private Optional<ErrorOutput> breakBuildIfNecessaryByApplyingFilter(List<JApiClass> jApiClasses,
+																		final Options options,
+																		final JarArchiveComparator jarArchiveComparator) {
 		final StringBuilder sb = new StringBuilder();
 		final BreakBuildResult breakBuildResult = new BreakBuildResult(options.isErrorOnBinaryIncompatibility(),
-			options.isErrorOnSourceIncompatibility());
+				options.isErrorOnSourceIncompatibility());
 		final boolean breakBuildIfCausedByExclusion = options.isErrorOnExclusionIncompatibility();
 		Filter.filter(jApiClasses, new Filter.FilterVisitor() {
 			@Override
@@ -430,7 +457,32 @@ public class IncompatibleErrorOutput extends OutputGenerator<Void> {
 			}
 		});
 		if (breakBuildResult.breakTheBuild()) {
-			throw new JApiCmpException(JApiCmpException.Reason.IncompatibleChange, String.format("There is at least one incompatibility: %s", sb.toString()));
+			return Optional.of(new ErrorOutput(null, JApiCmpException.Reason.IncompatibleChange,
+					String.format("There is at least one incompatibility: %s", sb.toString())));
+		}
+		return Optional.absent();
+	}
+
+	public static final class ErrorOutput {
+		public final Optional<SemanticVersion> oldVersion;
+		public final JApiCmpException.Reason reason;
+		public final String reasonMsg;
+		public final Optional<String> adviceMsg;
+
+		public ErrorOutput(SemanticVersion oldVersion,
+						   JApiCmpException.Reason reason,
+						   String reasonMsg) {
+			this(oldVersion, reason, reasonMsg, null);
+		}
+
+		public ErrorOutput(SemanticVersion oldVersion,
+						   JApiCmpException.Reason reason,
+						   String reasonMsg,
+						   String adviceMsg) {
+			this.oldVersion = Optional.fromNullable(oldVersion);
+			this.reason = reason;
+			this.reasonMsg = reasonMsg;
+			this.adviceMsg = Optional.fromNullable(adviceMsg);
 		}
 	}
 }

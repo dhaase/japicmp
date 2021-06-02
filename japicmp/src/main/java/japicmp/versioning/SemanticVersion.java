@@ -7,23 +7,6 @@ public class SemanticVersion {
 	private final int minor;
 	private final int patch;
 
-	public enum ChangeType {
-		MAJOR(3),
-		MINOR(2),
-		PATCH(1),
-		UNCHANGED(0);
-
-		private final int rank;
-
-		ChangeType(int rank) {
-			this.rank = rank;
-		}
-
-		public int getRank() {
-			return rank;
-		}
-	}
-
 	public SemanticVersion(int major, int minor, int patch) {
 		this.major = major;
 		this.minor = minor;
@@ -74,5 +57,42 @@ public class SemanticVersion {
 	@Override
 	public String toString() {
 		return major + "." + minor + "." + patch;
+	}
+
+	public SemanticVersion increment(ChangeType type) {
+		if (ChangeType.UNCHANGED == type) {
+			return this;
+		}
+		int newMajor = this.major;
+		int newMinor = this.minor;
+		int newPatch = this.patch;
+		if (ChangeType.MAJOR == type) {
+			newMajor = this.major + 1;
+			newMinor = 0;
+			newPatch = 0;
+		} else if (ChangeType.MINOR == type) {
+			newMinor = this.minor + 1;
+			newPatch = 0;
+		} else if (ChangeType.PATCH == type) {
+			newPatch = this.patch + 1;
+		}
+		return new SemanticVersion(newMajor, newMinor, newPatch);
+	}
+
+	public enum ChangeType {
+		MAJOR(3),
+		MINOR(2),
+		PATCH(1),
+		UNCHANGED(0);
+
+		private final int rank;
+
+		ChangeType(int rank) {
+			this.rank = rank;
+		}
+
+		public int getRank() {
+			return rank;
+		}
 	}
 }

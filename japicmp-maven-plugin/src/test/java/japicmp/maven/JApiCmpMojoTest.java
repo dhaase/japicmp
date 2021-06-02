@@ -126,7 +126,8 @@ public class JApiCmpMojoTest {
 		parameterParam.setBreakBuildIfCausedByExclusion(breakBuildIfCausedByExclusion); //do not break the build if cause is excluded
 		parameterParam.setBreakBuildOnBinaryIncompatibleModifications(true);
 		parameterParam.setBreakBuildOnSourceIncompatibleModifications(true);
-		mojo.breakBuildIfNecessary(compareClassesResult.getjApiClasses(), parameterParam, options, new JarArchiveComparator(jarArchiveComparatorOptions));
+		mojo.initOptionsForErrorChecking(options, parameterParam);
+		mojo.checkIncompatibility(compareClassesResult.getjApiClasses(), options, new JarArchiveComparator(jarArchiveComparatorOptions), true);
 	}
 
 	@Test
@@ -165,7 +166,8 @@ public class JApiCmpMojoTest {
 		parameterParam.setBreakBuildIfCausedByExclusion(breakBuildIfCausedByExclusion); //do not break the build if cause is excluded
 		parameterParam.setBreakBuildOnBinaryIncompatibleModifications(true);
 		parameterParam.setBreakBuildOnSourceIncompatibleModifications(true);
-		mojo.breakBuildIfNecessary(compareClassesResult.getjApiClasses(), parameterParam, options, compareClassesResult.getJarArchiveComparator());
+		mojo.initOptionsForErrorChecking(options, parameterParam);
+		mojo.checkIncompatibility(compareClassesResult.getjApiClasses(), options, compareClassesResult.getJarArchiveComparator(), true);
 	}
 
 	@Test
@@ -204,7 +206,8 @@ public class JApiCmpMojoTest {
 		parameterParam.setBreakBuildIfCausedByExclusion(breakBuildIfCausedByExclusion); //do not break the build if cause is excluded
 		parameterParam.setBreakBuildOnBinaryIncompatibleModifications(true);
 		parameterParam.setBreakBuildOnSourceIncompatibleModifications(true);
-		mojo.breakBuildIfNecessary(compareClassesResult.getjApiClasses(), parameterParam, options, compareClassesResult.getJarArchiveComparator());
+		mojo.initOptionsForErrorChecking(options, parameterParam);
+		mojo.checkIncompatibility(compareClassesResult.getjApiClasses(), options, compareClassesResult.getJarArchiveComparator(), true);
 	}
 
 	@Test
@@ -241,7 +244,8 @@ public class JApiCmpMojoTest {
 		parameterParam.setBreakBuildIfCausedByExclusion(breakBuildIfCausedByExclusion); //do not break the build if cause is excluded
 		parameterParam.setBreakBuildOnBinaryIncompatibleModifications(true);
 		parameterParam.setBreakBuildOnSourceIncompatibleModifications(true);
-		mojo.breakBuildIfNecessary(compareClassesResult.getjApiClasses(), parameterParam, options, compareClassesResult.getJarArchiveComparator());
+		mojo.initOptionsForErrorChecking(options, parameterParam);
+		mojo.checkIncompatibility(compareClassesResult.getjApiClasses(), options, compareClassesResult.getJarArchiveComparator(), true);
 	}
 
 	@Test
@@ -269,7 +273,8 @@ public class JApiCmpMojoTest {
 		parameterParam.setBreakBuildOnBinaryIncompatibleModifications(true);
 		parameterParam.setBreakBuildOnSourceIncompatibleModifications(true);
 		try {
-			mojo.breakBuildIfNecessary(compareClassesResult.getjApiClasses(), parameterParam, options, compareClassesResult.getJarArchiveComparator());
+			mojo.initOptionsForErrorChecking(options, parameterParam);
+			mojo.checkIncompatibility(compareClassesResult.getjApiClasses(), options, compareClassesResult.getJarArchiveComparator(), true);
 			fail("No exception thrown.");
 		} catch (MojoFailureException e) {
 			String msg = e.getMessage();

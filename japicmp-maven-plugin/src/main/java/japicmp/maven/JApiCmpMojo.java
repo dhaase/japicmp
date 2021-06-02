@@ -47,6 +47,7 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -154,12 +155,14 @@ public class JApiCmpMojo extends AbstractMojo {
 					getLog().info("Written file '" + file.getAbsolutePath() + "'.");
 				}
 			}
-			breakBuildIfNecessary(jApiClasses, pluginParameters.getParameterParam(), options, jarArchiveComparator);
+			initOptionsForErrorChecking(options, pluginParameters.getParameterParam());
+			checkIncompatibility(jApiClasses, options, jarArchiveComparator, true);
 			return Optional.of(xmlOutput);
 		} catch (IOException e) {
 			throw new MojoFailureException(String.format("Failed to construct output directory: %s", e.getMessage()), e);
 		}
 	}
+
 
 	private void setUpOverrideCompatibilityChanges(JarArchiveComparatorOptions comparatorOptions, PluginParameters pluginParameters) throws MojoFailureException {
 		if (pluginParameters.getParameterParam() != null && pluginParameters.getParameterParam().getOverrideCompatibilityChangeParameters() != null) {
@@ -358,7 +361,8 @@ public class JApiCmpMojo extends AbstractMojo {
 		}
 	}
 
-	void breakBuildIfNecessary(List<JApiClass> jApiClasses, Parameter parameterParam, Options options, JarArchiveComparator jarArchiveComparator) throws MojoFailureException, MojoExecutionException {
+	void initOptionsForErrorChecking(Options options,
+									 Parameter parameterParam) {
 		if (breakBuildBasedOnSemanticVersioning(parameterParam)) {
 			options.setErrorOnSemanticIncompatibility(true);
 		}
@@ -383,7 +387,14 @@ public class JApiCmpMojo extends AbstractMojo {
 		if (this.parameter != null && this.parameter.getIgnoreMissingNewVersion()) {
 			options.setIgnoreMissingNewVersion(true);
 		}
+	}
 
+
+	void checkIncompatibility(List<JApiClass> jApiClasses,
+							  Options options,
+							  JarArchiveComparator jarArchiveComparator,
+							  boolean raiseException) throws MojoFailureException, MojoExecutionException {
+		String prefix = "[Insufficient API Version Change]";
 		IncompatibleErrorOutput errorOutput = new IncompatibleErrorOutput(options, jApiClasses, jarArchiveComparator) {
 			@Override
 			protected void warn(String msg, Throwable error) {
@@ -391,13 +402,45 @@ public class JApiCmpMojo extends AbstractMojo {
 			}
 		};
 		try {
-			errorOutput.generate();
-		} catch (JApiCmpException e) {
-			if (e.getReason() == JApiCmpException.Reason.IncompatibleChange) {
-				throw new MojoFailureException(e.getMessage());
-			} else {
-				throw new MojoExecutionException("Error while checking for incompatible changes", e);
+			Optional<IncompatibleErrorOutput.ErrorOutput> resultOption = errorOutput.generate();
+			if (resultOption.isPresent()) {
+				IncompatibleErrorOutput.ErrorOutput result = resultOption.get();
+				if (result.reason == JApiCmpException.Reason.IncompatibleChange) {
+					String msg = "";
+					if (result.oldVersion.isPresent()) {
+						String basedOnMsg = prefix + " Based on the determined previous version ["
+								+ result.oldVersion.get() + "]";
+						if (raiseException) {
+							getLog().error(basedOnMsg);
+						} else {
+							getLog().warn(basedOnMsg);
+						}
+						msg += basedOnMsg;
+					}
+					String reasonMsg = " Reason: " + result.reasonMsg;
+					msg += reasonMsg;
+					if (raiseException) {
+						getLog().error(prefix + reasonMsg);
+					} else {
+						getLog().warn(prefix + reasonMsg);
+					}
+					if (result.adviceMsg.isPresent()) {
+						String adviceMsg = " Advice: " + result.adviceMsg.get();
+						msg += adviceMsg;
+						if (raiseException) {
+							getLog().error(prefix + adviceMsg);
+						} else {
+							getLog().warn(prefix + adviceMsg);
+						}
+					}
+					if (raiseException) {
+						throw new MojoFailureException(msg);
+					}
+				}
 			}
+		} catch (JApiCmpException e) {
+			getLog().error(prefix + " " + e.toString());
+			throw new MojoExecutionException(prefix + " Error while checking for incompatible changes: " + e, e);
 		}
 	}
 
